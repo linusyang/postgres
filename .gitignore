@@ -21,6 +21,7 @@ lcov.info
 win32ver.rc
 *.exe
 lib*dll.def
+.DS_Store
 
 # Local excludes in root directory
 /GNUmakefile
