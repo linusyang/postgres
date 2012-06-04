@@ -1264,3 +1264,83 @@ TypeGetTupleDesc(Oid typeoid, List *colaliases)
 
 	return tupdesc;
 }
+
+/* Database Project - Modified by Linus Yang */
+/* Task 1 - Similarity Join */
+
+Datum
+levenshtein_distance(PG_FUNCTION_ARGS)
+{
+    char *s, *t, ch1, ch2;
+    int m, n, i, j, *d;
+    int64 result;
+    s = PG_GETARG_CSTRING(0);
+    t = PG_GETARG_CSTRING(1);
+    m = strlen(s);
+    n = strlen(t);
+    d = (int *) malloc(sizeof(int) * (m + 1) * (n + 1));
+    for (i = 0; i <= m; i++)
+        d[i * (n + 1)] = i;
+    for (j = 0; j <= n; j++)
+        d[j] = j;
+    for (j = 1; j <= n; j++)
+        for (i = 1; i <= m; i++)
+        {
+            ch1 = s[i - 1];
+            ch2 = t[j - 1];
+            ch1 = ch1 >= 'A' && ch1 <= 'Z' ? ch1 - 'A' + 'a' : ch1;
+            ch2 = ch2 >= 'A' && ch2 <= 'Z' ? ch2 - 'A' + 'a' : ch2;
+            if (ch1 == ch2)
+                d[i * (n + 1) + j] = d[(i - 1) * (n + 1) + (j - 1)];
+            else
+                d[i * (n + 1) + j] = Min(Min(d[(i - 1) * (n + 1) + j] + 1,
+                                             d[i * (n + 1) + (j - 1)] + 1),
+                                         d[(i - 1) * (n + 1) + (j - 1)] + 1);
+        }
+    result = d[m * (n + 1) + n];
+    free(d);
+    PG_RETURN_INT64(result);
+}
+
+#define HASH(a, b, c) {if (!a[b]) {a[b] = 1; c++;}}
+
+Datum
+jaccard_index(PG_FUNCTION_ARGS)
+{
+    int m, n, i, k, uni_num, s_num, t_num;
+    char *s, *t;
+    char h1[0x10000] = {0}, h2[0x10000] = {0};
+    float4 result = 0;
+    s = PG_GETARG_CSTRING(0);
+    t = PG_GETARG_CSTRING(1);
+    m = strlen(s);
+    n = strlen(t);
+    if (!m && !n)
+        PG_RETURN_FLOAT4(1);
+    if (!m || !n)
+        PG_RETURN_FLOAT4(0);
+    s_num = 0;
+    t_num = 0;
+    HASH(h1, 0xff & s[0], s_num);
+    HASH(h1, 0xff00 & (s[m - 1] << 8), s_num);
+    for (i = 0; i < m - 1; i++)
+        HASH(h1, (0xff00 & (s[i] << 8)) + (0xff & s[i + 1]), s_num);
+    uni_num = s_num;
+    k = 0xff & t[0];
+    HASH(h1, k, uni_num);
+    HASH(h2, k, t_num);
+    k = 0xff00 & (t[n - 1] << 8);
+    HASH(h1, k, uni_num);
+    HASH(h2, k, t_num);
+    for (i = 0; i < n - 1; i++)
+    {
+        k = (0xff00 & (t[i] << 8)) + (0xff & t[i + 1]);
+        HASH(h1, k, uni_num);
+        HASH(h2, k, t_num);
+    }
+    if (uni_num)
+        result = (float4) (s_num + t_num - uni_num) / (float4) uni_num;
+    PG_RETURN_FLOAT4(result);
+}
+
+#undef HASH(a, b, c)

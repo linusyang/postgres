@@ -274,6 +274,8 @@ extern TupleTableSlot *TupleDescGetSlot(TupleDesc tupdesc);
  */
 
 /* from funcapi.c */
+extern Datum levenshtein_distance(PG_FUNCTION_ARGS);
+extern Datum jaccard_index(PG_FUNCTION_ARGS);
 extern FuncCallContext *init_MultiFuncCall(PG_FUNCTION_ARGS);
 extern FuncCallContext *per_MultiFuncCall(PG_FUNCTION_ARGS);
 extern void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx);

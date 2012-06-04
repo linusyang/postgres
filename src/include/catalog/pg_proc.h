@@ -4325,6 +4325,12 @@ DESCR("fetch the last row value");
 DATA(insert OID = 3114 (  nth_value		PGNSP PGUID 12 1 0 0 f t f t f i 2 0 2283 "2283 23" _null_ _null_ _null_ _null_ window_nth_value _null_ _null_ _null_ ));
 DESCR("fetch the Nth row value");
 
+/* Database Project - Modified by Linus Yang */
+/* Task 1 - Similarity Join */
+DATA(insert OID = 4375 ( levenshtein_distance PGNSP PGUID 12 1 0 0 f f f t f i 2 0 20 "2275 2275" _null_ _null_ _null_ _null_ levenshtein_distance _null_ _null_ _null_ ));
+DESCR("calculate levenshtein distance");
+DATA(insert OID = 4376 ( jaccard_index PGNSP PGUID 12 1 0 0 f f f t f i 2 0 700 "2275 2275" _null_ _null_ _null_ _null_ jaccard_index _null_ _null_ _null_ ));
+DESCR("calculate jaccard index");
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result
