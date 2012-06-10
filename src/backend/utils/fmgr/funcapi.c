@@ -1274,10 +1274,13 @@ levenshtein_distance(PG_FUNCTION_ARGS)
     char *s, *t, ch1, ch2;
     int m, n, i, j, *d;
     int64 result;
-    s = PG_GETARG_CSTRING(0);
-    t = PG_GETARG_CSTRING(1);
-    m = strlen(s);
-    n = strlen(t);
+    text *arg1, *arg2;
+    arg1 = PG_GETARG_TEXT_PP(0);
+    arg2 = PG_GETARG_TEXT_PP(1);
+    s = text_to_cstring(arg1);
+    t = text_to_cstring(arg2);
+    m = (int) strlen(s);
+    n = (int) strlen(t);
     d = (int *) malloc(sizeof(int) * (m + 1) * (n + 1));
     for (i = 0; i <= m; i++)
         d[i * (n + 1)] = i;
@@ -1311,12 +1314,15 @@ jaccard_index(PG_FUNCTION_ARGS)
     char *s, *t;
     char h1[0x10000] = {0}, h2[0x10000] = {0};
     float4 result = 0;
+    text *arg1, *arg2;
     memset(h1, 0, 0x10000);
     memset(h2, 0, 0x10000);
-    s = PG_GETARG_CSTRING(0);
-    t = PG_GETARG_CSTRING(1);
-    m = strlen(s);
-    n = strlen(t);
+    arg1 = PG_GETARG_TEXT_PP(0);
+    arg2 = PG_GETARG_TEXT_PP(1);
+    s = text_to_cstring(arg1);
+    t = text_to_cstring(arg2);
+    m = (int) strlen(s);
+    n = (int) strlen(t);
     if (!m && !n)
         PG_RETURN_FLOAT4(1);
     if (!m || !n)
@@ -1345,4 +1351,4 @@ jaccard_index(PG_FUNCTION_ARGS)
     PG_RETURN_FLOAT4(result);
 }
 
-#undef HASH(a, b, c)
+#undef HASH
