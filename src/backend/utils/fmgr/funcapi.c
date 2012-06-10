@@ -1311,6 +1311,8 @@ jaccard_index(PG_FUNCTION_ARGS)
     char *s, *t;
     char h1[0x10000] = {0}, h2[0x10000] = {0};
     float4 result = 0;
+    memset(h1, 0, 0x10000);
+    memset(h2, 0, 0x10000);
     s = PG_GETARG_CSTRING(0);
     t = PG_GETARG_CSTRING(1);
     m = strlen(s);
