@@ -1463,6 +1463,14 @@ typedef struct NestLoopState
 	bool		nl_NeedNewOuter;
 	bool		nl_MatchedOuter;
 	TupleTableSlot *nl_NullInnerTupleSlot;
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+    int nl_BlockIndex;
+    int nl_BlockLen;
+    bool nl_BlockIsEnd;
+    TupleTableSlot *nl_InnerTupleSlot;
+    TupleTableSlot **nl_OuterTupleSlots;
 } NestLoopState;
 
 /* ----------------

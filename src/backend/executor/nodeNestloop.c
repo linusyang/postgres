@@ -25,6 +25,32 @@
 #include "executor/nodeNestloop.h"
 #include "utils/memutils.h"
 
+/* Database Project - Modified by Linus Yang */
+/* Task 2 - Block Nested Loop Join */
+int nlj_block_size;
+
+int 
+getTupleBlock(PlanState *outerPlan, NestLoopState *node) 
+{
+    TupleTableSlot *outerTupleSlot;
+    TupleDesc oneTupleDesc;
+    int i;
+    for (i = 0; i < nlj_block_size && !(node->nl_BlockIsEnd); i++) 
+    {
+        outerTupleSlot = ExecProcNode(outerPlan);
+        if (TupIsNull(outerTupleSlot)) 
+        {
+            node->nl_BlockIsEnd = true;
+            break;
+        }
+        oneTupleDesc = CreateTupleDescCopy(outerTupleSlot->tts_tupleDescriptor);
+        ExecSetSlotDescriptor(node->nl_OuterTupleSlots[i], oneTupleDesc);
+        ExecCopySlot(node->nl_OuterTupleSlots[i], outerTupleSlot);
+    }
+    node->nl_BlockIndex = 0;
+    node->nl_BlockLen = i;
+    return i;
+}
 
 /* ----------------------------------------------------------------
  *		ExecNestLoop(node)
@@ -80,6 +106,11 @@ ExecNestLoop(NestLoopState *node)
 	outerPlan = outerPlanState(node);
 	innerPlan = innerPlanState(node);
 	econtext = node->js.ps.ps_ExprContext;
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+	if (node->js.jointype == JOIN_INNER && nodeTag(innerPlan) != T_IndexScanState)
+		return ExecInnerNestLoop(node);
 
 	/*
 	 * Check to see if we're still projecting out tuples from a previous join
@@ -282,6 +313,166 @@ ExecNestLoop(NestLoopState *node)
 	}
 }
 
+/* Database Project - Modified by Linus Yang */
+/* Task 2 - Block Nested Loop Join */
+TupleTableSlot *
+ExecInnerNestLoop(NestLoopState *node) 
+{
+	PlanState  *innerPlan;
+	PlanState  *outerPlan;
+    TupleTableSlot **blockTupleSlots;
+	List	   *joinqual;
+	List	   *otherqual;
+	ExprContext *econtext;
+    
+	/*
+	 * get information from the node
+	 */
+	ENL1_printf("getting info from node");
+    
+	joinqual = node->js.joinqual;
+	otherqual = node->js.ps.qual;
+	outerPlan = outerPlanState(node);
+	innerPlan = innerPlanState(node);
+	econtext = node->js.ps.ps_ExprContext;
+    blockTupleSlots = node->nl_OuterTupleSlots;
+    
+	/*
+	 * Check to see if we're still projecting out tuples from a previous join
+	 * tuple (because there is a function-returning-set in the projection
+	 * expressions).  If so, try to project another one.
+	 */
+	if (node->js.ps.ps_TupFromTlist)
+	{
+		TupleTableSlot *result;
+		ExprDoneCond isDone;
+        
+		result = ExecProject(node->js.ps.ps_ProjInfo, &isDone);
+		if (isDone == ExprMultipleResult)
+			return result;
+		/* Done with that source tuple... */
+		node->js.ps.ps_TupFromTlist = false;
+	}
+    
+	/*
+	 * Reset per-tuple memory context to free any expression evaluation
+	 * storage allocated in the previous tuple cycle.  Note this can't happen
+	 * until we're done projecting out tuples from a join tuple.
+	 */
+	ResetExprContext(econtext);
+    
+	/*
+	 * Ok, everything is setup for the join so now loop until we return a
+	 * qualifying join tuple.
+	 */
+	ENL1_printf("entering main loop");
+    
+	for (;;)
+	{
+		/*
+		 * If we don't have an outer tuple, get the next one and reset the
+		 * inner scan.
+		 */
+		if (node->nl_NeedNewOuter)
+		{
+			ENL1_printf("getting new outer block");
+            
+			if (getTupleBlock(outerPlan, node) == 0)
+			{
+				ENL1_printf("no more tuples, last block");
+				return NULL;
+			}
+            
+			ENL1_printf("saving new outer tuple information");
+			node->nl_NeedNewOuter = false;
+			node->nl_MatchedOuter = false;
+            
+			/*
+			 * now rescan the inner plan
+			 */
+			ENL1_printf("rescanning inner plan");
+			ExecReScan(innerPlan);
+		}
+        
+		/*
+		 * we have an outerTuple, try to get the next inner tuple.
+		 */
+		ENL1_printf("getting new inner tuple");
+        
+		if (node->nl_InnerTupleSlot == NULL) 
+            node->nl_InnerTupleSlot = ExecProcNode(innerPlan);
+		econtext->ecxt_innertuple = node->nl_InnerTupleSlot;
+        
+		if (TupIsNull(node->nl_InnerTupleSlot))
+		{
+			ENL1_printf("no inner tuple, need new outer tuple");
+            
+			node->nl_NeedNewOuter = true;
+            node->nl_InnerTupleSlot = NULL;
+            
+			/*
+			 * Otherwise just return to top of loop for a new outer tuple.
+			 */
+			continue;
+		}
+        
+        if (node->nl_BlockIndex == node->nl_BlockLen)
+        {
+            node->nl_InnerTupleSlot = NULL;
+            node->nl_BlockIndex = 0;
+            continue;
+        }
+        else
+        {
+            econtext->ecxt_outertuple = blockTupleSlots[node->nl_BlockIndex];
+            node->nl_BlockIndex++;
+        }
+        
+		/*
+		 * at this point we have a new pair of inner and outer tuples so we
+		 * test the inner and outer tuples to see if they satisfy the node's
+		 * qualification.
+		 *
+		 * Only the joinquals determine MatchedOuter status, but all quals
+		 * must pass to actually return the tuple.
+		 */
+		ENL1_printf("testing qualification");
+        
+		if (ExecQual(joinqual, econtext, false))
+		{
+			node->nl_MatchedOuter = true;
+            
+			if (otherqual == NIL || ExecQual(otherqual, econtext, false))
+			{
+				/*
+				 * qualification was satisfied so we project and return the
+				 * slot containing the result tuple using ExecProject().
+				 */
+				TupleTableSlot *result;
+				ExprDoneCond isDone;
+                
+				ENL1_printf("qualification succeeded, projecting tuple");
+                
+				result = ExecProject(node->js.ps.ps_ProjInfo, &isDone);
+                
+				if (isDone != ExprEndResult)
+				{
+					node->js.ps.ps_TupFromTlist =
+                    (isDone == ExprMultipleResult);
+					return result;
+				}
+			}
+		}
+        
+		/*
+		 * Tuple fails qual, so free per-tuple memory and try again.
+		 */
+		ResetExprContext(econtext);
+        
+		ENL1_printf("qualification failed, looping");
+	}
+}
+
 /* ----------------------------------------------------------------
  *		ExecInitNestLoop
  * ----------------------------------------------------------------
@@ -290,6 +481,7 @@ NestLoopState *
 ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 {
 	NestLoopState *nlstate;
+    int i;
 
 	/* check for unsupported flags */
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
@@ -374,6 +566,15 @@ ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 	nlstate->js.ps.ps_TupFromTlist = false;
 	nlstate->nl_NeedNewOuter = true;
 	nlstate->nl_MatchedOuter = false;
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+    nlstate->nl_BlockIndex = 0;
+    nlstate->nl_BlockLen = -1;
+    nlstate->nl_InnerTupleSlot = NULL;
+    nlstate->nl_OuterTupleSlots = (TupleTableSlot **) palloc(nlj_block_size * sizeof(TupleTableSlot *));
+    for(i = 0; i < nlj_block_size; i++) 
+        nlstate->nl_OuterTupleSlots[i] = ExecInitExtraTupleSlot(estate);
 
 	NL1_printf("ExecInitNestLoop: %s\n",
 			   "node initialized");
@@ -390,6 +591,8 @@ ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 void
 ExecEndNestLoop(NestLoopState *node)
 {
+    int i;
+    
 	NL1_printf("ExecEndNestLoop: %s\n",
 			   "ending node processing");
 
@@ -402,7 +605,13 @@ ExecEndNestLoop(NestLoopState *node)
 	 * clean out the tuple table
 	 */
 	ExecClearTuple(node->js.ps.ps_ResultTupleSlot);
-
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+    for(i = 0; i < nlj_block_size; i++) 
+        ExecClearTuple(node->nl_OuterTupleSlots[i]);
+    pfree(node->nl_OuterTupleSlots);
+    
 	/*
 	 * close down subplans
 	 */
@@ -438,4 +647,10 @@ ExecReScanNestLoop(NestLoopState *node)
 	node->js.ps.ps_TupFromTlist = false;
 	node->nl_NeedNewOuter = true;
 	node->nl_MatchedOuter = false;
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+    node->nl_BlockIndex = 0;
+    node->nl_BlockLen = -1;
+    node->nl_InnerTupleSlot = NULL;
 }

@@ -37,6 +37,9 @@
 #include "commands/variable.h"
 #include "commands/trigger.h"
 #include "funcapi.h"
+/* Database Project - Modified by Linus Yang */
+/* Task 2 - Block Nested Loop Join */
+#include "executor/nodeNestloop.h"
 #include "libpq/auth.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/pqformat.h"
@@ -2362,6 +2365,18 @@ static struct config_int ConfigureNamesInt[] =
 		&pgstat_track_activity_query_size,
 		1024, 100, 102400,
 		NULL, NULL, NULL
+	},
+    
+    /* Database Project - Modified by Linus Yang */
+    /* Task 2 - Block Nested Loop Join */
+    {
+		{"nlj_block_size", PGC_USERSET, QUERY_TUNING_OTHER,
+			gettext_noop("Sets the number of outer relation tuples for block-nested-loop"
+                         "join"),
+            NULL,
+		},
+		&nlj_block_size,
+		1, 1, 10000, NULL, NULL
 	},
 
 	/* End-of-list marker */

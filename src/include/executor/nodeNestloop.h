@@ -21,4 +21,10 @@ extern TupleTableSlot *ExecNestLoop(NestLoopState *node);
 extern void ExecEndNestLoop(NestLoopState *node);
 extern void ExecReScanNestLoop(NestLoopState *node);
 
+/* Database Project - Modified by Linus Yang */
+/* Task 2 - Block Nested Loop Join */
+extern int nlj_block_size;
+extern TupleTableSlot *ExecInnerNestLoop(NestLoopState *node);
+extern int  getTupleBlock(PlanState *outerPlan, NestLoopState *node);
+
 #endif   /* NODENESTLOOP_H */
